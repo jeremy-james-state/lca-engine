@@ -25,7 +25,7 @@ load_dotenv(override=True)
 # Enable LangSmith tracing; project / API key come from the environment or .env.
 os.environ.setdefault("LANGSMITH_TRACING", "true")
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
@@ -93,21 +93,25 @@ def build_candidate_profile(candidate_id: str) -> dict:
 
 
 SCORING_PROMPT = (
-    "You are a recruiting assistant. Score the candidate against the job from "
-    "1 to 100 based on how good a fit they are, weighing their experience and "
-    "skills. In your justification, explicitly list which of the job's required "
-    "skills the candidate has and which required skills they are missing, naming "
-    "each one. Any missing required skill must lower the skills_match component and "
-    "the overall score. Return a score and a justification that reflects your "
-    "overall assessment of this candidate's fit."
+    "You are a recruiting assistant. Score the candidate against the job using "
+    "three independent component scores, each from 0 through 100: experience, "
+    "skills_match, and seniority_fit. Calculate the overall score as the fixed "
+    "weighted average of experience at 40%, skills_match at 40%, and seniority_fit "
+    "at 20%, rounded as needed to produce a score from 1 through 100. The returned "
+    "component values and overall score must be numerically consistent with this "
+    "formula, and component_max must remain 100. Missing required skills must lower "
+    "skills_match and therefore lower the overall score. In your justification, "
+    "explicitly list which of the job's required skills the candidate has and which "
+    "required skills the candidate is missing, naming each one. Return the score, "
+    "rubric breakdown, and justification for this candidate's fit."
 )
 
 from typing import Literal
 
 class RubricBreakdown(BaseModel):
-    experience: float
-    skills_match: float
-    seniority_fit: float
+    experience: float = Field(description="Independent experience score from 0 through 100.")
+    skills_match: float = Field(description="Independent skills match score from 0 through 100.")
+    seniority_fit: float = Field(description="Independent seniority fit score from 0 through 100.")
     component_max: Literal[100] = 100
 
 
@@ -250,6 +254,11 @@ SYSTEM_PROMPT = (
     "candidate and lookup_job_posting for the job. Pass their returned objects to "
     "score_candidate; never use hand-assembled candidate profiles or job descriptions "
     "built from only an ID."
+    "Report any blocked email result rather than claiming it was sent. When "
+    "rendering a score_candidate rubric_breakdown, use the returned component_max "
+    "as the denominator for experience, skills_match, and seniority_fit. Never "
+    "invent per-component maxima or denominators, and do not add a summed Total "
+    "line that the tool did not return."
 )
 
 agent_model = ChatOpenAI(model=MODEL_NAME, temperature=0)

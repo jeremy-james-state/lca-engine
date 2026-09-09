@@ -87,4 +87,9 @@ def add_candidate_skill(candidate_id, skill):
     skills = list(record["skills"])
     if skill not in skills:
         skills.append(skill)
-    return {"updated": True, "found": True, "skills": skills}
+    record["skills"] = skills
+    return {
+        "updated": skill in record["skills"],
+        "found": True,
+        "skills": record["skills"],
+    }
