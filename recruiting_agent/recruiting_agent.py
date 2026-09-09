@@ -139,20 +139,34 @@ def _candidate_has_required_fields(candidate):
 
 @tool
 def score_candidate(candidate_profile: dict, job_description: dict | None = None) -> dict:
-    "Score a candidate_profile returned by build_candidate_profile against a job_description returned by lookup_job_posting."
-    if job_description is None or not _job_has_required_fields(job_description):
-        return {"score": None, "error": "Cannot score without a valid job description."}
-    cid = candidate_profile.get("candidate_id")
-    if cid is not None:
-        record = data_service.get_candidate_record(cid)
-        if record is not None:
-            candidate_profile = {
-                **candidate_profile,
-                "work_history": data_service.fetch_work_history(cid),
-                "education": data_service.fetch_education(cid),
-                "skills": data_service.fetch_skills(cid),
-                "years_experience": record["years_experience"],
+    "Score the inner candidate_profile from build_candidate_profile and job_posting from lookup_job_posting; hand-assembled, wrapper, and bare-identifier inputs are unsupported."
+    missing_job_fields = (
+        not isinstance(job_description, dict)
+        or ("required_skills" not in job_description and "description" not in job_description)
+    )
+    if missing_job_fields or not _job_has_required_fields(job_description):
+        if missing_job_fields:
+            return {
+                "score": None,
+                "error": "Pass the object returned by lookup_job_posting, not a job id.",
             }
+        return {"score": None, "error": "Cannot score without a valid job description."}
+
+    cid = candidate_profile.get("candidate_id") if isinstance(candidate_profile, dict) else None
+    record = data_service.get_candidate_record(cid) if cid else None
+    if record is None:
+        return {
+            "score": None,
+            "error": "Cannot score without a resolved candidate profile; call build_candidate_profile first.",
+        }
+    candidate_profile = {
+        "candidate_id": cid,
+        "name": record["name"],
+        "work_history": data_service.fetch_work_history(cid),
+        "education": data_service.fetch_education(cid),
+        "skills": data_service.fetch_skills(cid),
+        "years_experience": record["years_experience"],
+    }
     if not _candidate_has_required_fields(candidate_profile):
         return {
             "score": None,
@@ -251,10 +265,11 @@ SYSTEM_PROMPT = (
     "scheduling, or advancement emails until the recruiter explicitly confirms. "
     "Report any blocked email result rather than claiming it was sent.\n\n"
     "Before calling score_candidate, always call build_candidate_profile for the "
-    "candidate and lookup_job_posting for the job. Pass their returned objects to "
-    "score_candidate; never use hand-assembled candidate profiles or job descriptions "
-    "built from only an ID."
-    "Report any blocked email result rather than claiming it was sent. When "
+    "candidate and lookup_job_posting for the job. Pass the inner candidate_profile "
+    "object and inner job_posting object from those tool results to score_candidate; "
+    "never use hand-assembled candidate_profile or job_description values, wrapper "
+    "objects, or bare identifiers."
+    "When "
     "rendering a score_candidate rubric_breakdown, use the returned component_max "
     "as the denominator for experience, skills_match, and seniority_fit. Never "
     "invent per-component maxima or denominators, and do not add a summed Total "
