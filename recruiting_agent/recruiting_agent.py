@@ -74,18 +74,19 @@ def lookup_job_posting(job_id: str) -> dict:
 @tool
 def build_candidate_profile(candidate_id: str) -> dict:
     "Assemble a full candidate profile (work history, education, skills) and store it. Returns the profile and a found flag."
-    existing = data_service.get_profile_from_db(candidate_id)["candidate_profile"]
-    if existing is not None:
-        return {"candidate_profile": existing, "found": True}
     rec = data_service.get_candidate_record(candidate_id)
     if rec is None:
         return {"candidate_profile": None, "found": False}
+    current_skills = data_service.fetch_skills(candidate_id)
+    existing = data_service.get_profile_from_db(candidate_id)["candidate_profile"]
+    if existing is not None and existing.get("skills") == current_skills:
+        return {"candidate_profile": existing, "found": True}
     built = {
         "candidate_id": candidate_id,
         "name": rec["name"],
         "work_history": data_service.fetch_work_history(candidate_id),
         "education": data_service.fetch_education(candidate_id),
-        "skills": data_service.fetch_skills(candidate_id),
+        "skills": current_skills,
         "years_experience": rec["years_experience"],
     }
     data_service.save_profile_to_db(candidate_id, built)
@@ -250,6 +251,8 @@ SYSTEM_PROMPT = (
     "rejected field. If rejected is true, report that status and refuse interview, "
     "scheduling, or advancement emails until the recruiter explicitly confirms. "
     "Report any blocked email result rather than claiming it was sent.\n\n"
+    "When add_candidate_skill returns updated:false, treat the update as failed "
+    "and do not claim that the skill was added.\n\n"
     "Before calling score_candidate, always call build_candidate_profile for the "
     "candidate and lookup_job_posting for the job. Pass their returned objects to "
     "score_candidate; never use hand-assembled candidate profiles or job descriptions "

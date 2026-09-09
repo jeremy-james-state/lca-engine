@@ -79,17 +79,18 @@ def save_profile_to_db(candidate_id, profile):
     _PROFILES[candidate_id] = profile
     return {"saved": True}
 
+@traceable(run_type="tool", name="add_candidate_skill")
 def add_candidate_skill(candidate_id, skill):
     "Add a skill to a candidate's source-of-truth record."
     record = CANDIDATES.get(candidate_id)
     if record is None:
         return {"updated": False, "found": False}
-    skills = list(record["skills"])
-    if skill not in skills:
-        skills.append(skill)
-    record["skills"] = skills
+    if skill not in record["skills"]:
+        record["skills"].append(skill)
+    _PROFILES.pop(candidate_id, None)
+    skills = CANDIDATES[candidate_id]["skills"]
     return {
-        "updated": skill in record["skills"],
+        "updated": skill in skills,
         "found": True,
-        "skills": record["skills"],
+        "skills": skills,
     }
