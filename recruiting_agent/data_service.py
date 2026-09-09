@@ -14,6 +14,7 @@ from .recruiting_records import JOB_POSTINGS, CANDIDATES, RECRUITER_IDS
 
 __all__ = [
     "get_job_posting", "get_candidate_record",
+    "find_candidate_by_email",
     "fetch_work_history", "fetch_education", "fetch_skills",
     "get_profile_from_db", "save_profile_to_db",
     "get_recruiter",
@@ -34,6 +35,12 @@ def get_job_posting(job_id):
 def get_candidate_record(candidate_id):
     "Return the source candidate record for candidate_id, or None if not found."
     return CANDIDATES.get(candidate_id)
+
+
+def find_candidate_by_email(email):
+    "Return a unique source candidate record for email, or None if not unique."
+    matches = [record for record in CANDIDATES.values() if record.get("email") == email]
+    return matches[0] if len(matches) == 1 else None
 
 
 def get_recruiter(recruiter):
