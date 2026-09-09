@@ -15,6 +15,7 @@ Install:
 """
 
 import json
+import math
 import os
 import random
 import uuid
@@ -94,16 +95,13 @@ def build_candidate_profile(candidate_id: str) -> dict:
 
 SCORING_PROMPT = (
     "You are a recruiting assistant. Score the candidate against the job using "
-    "three independent component scores, each from 0 through 100: experience, "
-    "skills_match, and seniority_fit. Calculate the overall score as the fixed "
-    "weighted average of experience at 40%, skills_match at 40%, and seniority_fit "
-    "at 20%, rounded as needed to produce a score from 1 through 100. The returned "
-    "component values and overall score must be numerically consistent with this "
-    "formula, and component_max must remain 100. Missing required skills must lower "
-    "skills_match and therefore lower the overall score. In your justification, "
+    "three independent component scores, each from 0 through component_max: "
+    "experience, skills_match, and seniority_fit. Do not emit an overall score or "
+    "max score, and do not pre-weight the component values. component_max must "
+    "remain 100. Missing required skills must lower skills_match. In your justification, "
     "explicitly list which of the job's required skills the candidate has and which "
-    "required skills the candidate is missing, naming each one. Return the score, "
-    "rubric breakdown, and justification for this candidate's fit."
+    "required skills the candidate is missing, naming each one. Return only the "
+    "rubric breakdown and justification for this candidate's fit."
 )
 
 from typing import Literal
@@ -116,8 +114,6 @@ class RubricBreakdown(BaseModel):
 
 
 class CandidateScore(BaseModel):
-    score: float
-    max_score: int = 100
     justification: str
     rubric_breakdown: RubricBreakdown
 
@@ -162,11 +158,44 @@ def score_candidate(candidate_profile: dict, job_description: dict | None = None
         "Job description:\n" + json.dumps(job_description, indent=2) +
         "\n\nCandidate profile:\n" + json.dumps(candidate_profile, indent=2)
     )
-    result = _scoring_llm.invoke([
-        {"role": "system", "content": SCORING_PROMPT},
-        {"role": "user", "content": user},
-    ])
-    return result.model_dump()
+    try:
+        result = _scoring_llm.invoke([
+            {"role": "system", "content": SCORING_PROMPT},
+            {"role": "user", "content": user},
+        ])
+        breakdown = result.rubric_breakdown
+        component_max = breakdown.component_max
+        components = (
+            breakdown.experience,
+            breakdown.skills_match,
+            breakdown.seniority_fit,
+        )
+        if not isinstance(component_max, (int, float)) or isinstance(component_max, bool):
+            raise ValueError("Invalid component maximum")
+        if not math.isfinite(component_max) or component_max <= 0:
+            raise ValueError("Invalid component maximum")
+        if any(
+            not isinstance(component, (int, float))
+            or isinstance(component, bool)
+            or not math.isfinite(component)
+            or component < 0
+            or component > component_max
+            for component in components
+        ):
+            raise ValueError("Invalid rubric component")
+    except Exception:
+        return {"score": None, "error": "Unable to produce a valid rubric breakdown."}
+    score = round(
+        0.4 * breakdown.experience
+        + 0.4 * breakdown.skills_match
+        + 0.2 * breakdown.seniority_fit
+    )
+    return {
+        "score": score,
+        "max_score": component_max,
+        "justification": result.justification,
+        "rubric_breakdown": breakdown.model_dump(),
+    }
 
 
 @tool
