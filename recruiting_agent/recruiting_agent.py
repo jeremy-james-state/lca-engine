@@ -127,15 +127,33 @@ def _job_has_required_fields(job):
         job.get("min_years_experience") is not None and bool(job.get("description"))
 
 
+def _candidate_has_required_fields(candidate):
+    "Return True if the candidate has the fields needed to score against a job."
+    return bool(candidate) and bool(candidate.get("work_history")) and \
+        candidate.get("years_experience") is not None
+
+
 @tool
 def score_candidate(candidate_profile: dict, job_description: dict | None = None) -> dict:
-    "Score a candidate profile against a job description on a 1-100 scale with a justification."
+    "Score a candidate_profile returned by build_candidate_profile against a job_description returned by lookup_job_posting."
     if job_description is None or not _job_has_required_fields(job_description):
         return {"score": None, "error": "Cannot score without a valid job description."}
-    # Score against the candidate's saved skills of record.
     cid = candidate_profile.get("candidate_id")
     if cid is not None:
-        candidate_profile = {**candidate_profile, "skills": data_service.fetch_skills(cid)}
+        record = data_service.get_candidate_record(cid)
+        if record is not None:
+            candidate_profile = {
+                **candidate_profile,
+                "work_history": data_service.fetch_work_history(cid),
+                "education": data_service.fetch_education(cid),
+                "skills": data_service.fetch_skills(cid),
+                "years_experience": record["years_experience"],
+            }
+    if not _candidate_has_required_fields(candidate_profile):
+        return {
+            "score": None,
+            "error": "Cannot score without a hydrated candidate profile; call build_candidate_profile first.",
+        }
     user = (
         "Job description:\n" + json.dumps(job_description, indent=2) +
         "\n\nCandidate profile:\n" + json.dumps(candidate_profile, indent=2)
@@ -227,7 +245,11 @@ SYSTEM_PROMPT = (
     "Before emailing a candidate, call get_candidate and inspect the returned "
     "rejected field. If rejected is true, report that status and refuse interview, "
     "scheduling, or advancement emails until the recruiter explicitly confirms. "
-    "Report any blocked email result rather than claiming it was sent."
+    "Report any blocked email result rather than claiming it was sent.\n\n"
+    "Before calling score_candidate, always call build_candidate_profile for the "
+    "candidate and lookup_job_posting for the job. Pass their returned objects to "
+    "score_candidate; never use hand-assembled candidate profiles or job descriptions "
+    "built from only an ID."
 )
 
 agent_model = ChatOpenAI(model=MODEL_NAME, temperature=0)
